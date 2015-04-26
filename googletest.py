@@ -5,6 +5,7 @@ import os
 import re
 import sys
 import ssl
+import _ssl
 import time
 import random
 import socket
@@ -16,16 +17,11 @@ from eta import ETA
 from operator import itemgetter
 from argparse import ArgumentParser
 
-IPLIST = []
 TMOUT = 2
 
 GOOGLE_ISSUER = ((('countryName', 'US'),),
                  (('organizationName', 'Google Inc'),),
                  (('commonName', 'Google Internet Authority G2'),))
-
-socket.setdefaulttimeout(TMOUT)
-sslctx = ssl.create_default_context()
-sslctx.check_hostname = False
 
 
 class NoCheckHTTPSHandler(urllib.request.HTTPSHandler):
@@ -35,15 +31,19 @@ class NoCheckHTTPSHandler(urllib.request.HTTPSHandler):
         self._context = sslctx
         self._check_hostname = False
 
+socket.setdefaulttimeout(TMOUT)
+sslctx = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+sslctx.options |= ssl.OP_NO_SSLv2
+sslctx.options |= ssl.OP_NO_SSLv3
+sslctx.options |= getattr(_ssl, "OP_NO_COMPRESSION", 0)
+sslctx.verify_mode = ssl.CERT_REQUIRED
+sslctx.set_default_verify_paths()
+try:
+    sslctx.check_hostname = False
+except AttributeError:
+    pass
+
 urlopener = urllib.request.build_opener(NoCheckHTTPSHandler)
-
-
-class IssuerNotMatch(Exception):
-    pass
-
-
-class NotGoogle(Exception):
-    pass
 
 
 def checkcert(host, port=443, domain='www.google.com', timeout=TMOUT, issuer=GOOGLE_ISSUER):
@@ -71,7 +71,7 @@ class GoogleIPManager:
         self.count = sum(net.num_addresses for net in self.networks)
         self.host = 'www.google.com'
         self.headers = {}
-        self.avail = []
+        self.avail = {}
         self.progress = None
 
     def sethost(self, host=None):
@@ -112,9 +112,10 @@ class GoogleIPManager:
         return time.time() - start
 
     def checkoneip(self, ip):
-        res = self.checkip(ip)
-        if res:
-            self.avail.append((ip, res))
+        if ip not in self.avail:
+            res = self.checkip(ip)
+            if res:
+                self.avail[ip] = res
         self.progress.print_status()
 
 def checksslhosts(hostsfile):
@@ -131,23 +132,23 @@ def checksslhosts(hostsfile):
 
 def batchcheck(gm, count=10000, workers=100):
     try:
-        with multiprocessing.dummy.Pool(workers) as p:
-            workers = min(workers, count)
-            chunksize = max(count // workers, 1)
-            if count < gm.count:
-                gm.progress = ETA(count)
-                it = p.imap_unordered(
-                    gm.checkoneip, gm.randomips(count), chunksize)
-            else:
-                gm.progress = ETA(gm.count)
-                it = p.imap_unordered(gm.checkoneip, gm.ips(), chunksize)
-            for _ in it:
-                pass
+        p = multiprocessing.dummy.Pool(workers)
+        workers = min(workers, count)
+        chunksize = max(count // workers, 1)
+        if count < gm.count:
+            gm.progress = ETA(count)
+            it = p.imap_unordered(
+                gm.checkoneip, gm.randomips(count), chunksize)
+        else:
+            gm.progress = ETA(gm.count)
+            it = p.imap_unordered(gm.checkoneip, gm.ips(), chunksize)
+        for _ in it:
+            pass
     except KeyboardInterrupt:
-        pass
+        p.terminate()
     finally:
         gm.progress.done()
-    return sorted(gm.avail, key=itemgetter(1))
+    return sorted(gm.avail.items(), key=itemgetter(1))
 
 
 def main():
