@@ -131,7 +131,9 @@ class GoogleIPManager:
         start = time.time()
         try:
             with urlopener.open(req, timeout=TMOUT) as f:
-                page = f.read(2048)
+                if f.status not in (200, 301, 302):
+                    return False
+                page = f.read()
         except Exception as ex:
             return False
         return (dnsnames, time.time() - start)
