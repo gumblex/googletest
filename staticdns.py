@@ -1,11 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from itertools import chain
-
-# Change the two value according to your actual configuration
+# Change this according to your actual configuration
 HOSTS = 'hosts.txt'
-HOSTSFORMAT = False
 
 SR = None
 
@@ -16,18 +13,15 @@ def uniq(seq):
 
 class StaticResolver:
 
-    def __init__(self, recordfile, hostsformat=False):
+    def __init__(self, recordfile):
         self.trie = {}
         with open(recordfile, 'r') as f:
             for ln in f:
                 ln = ln.split('#')[0].strip()
                 if not ln:
                     continue
-                a, b = ln.split()[:2]
-                if hostsformat:
-                    self.addrecord(b, a)
-                else:
-                    self.addrecord(a, b)
+                ip, host = ln.split()[:2]
+                self.addrecord(host, ip)
 
     def addrecord(self, host, ip):
         host = host.split('.')
@@ -58,25 +52,22 @@ class StaticResolver:
         root = self.trie
         iplist = []
         for lv in host[:-1]:
-            if '*' in root:
-                iplist.append(root['*'])
             if lv not in root:
                 break
             root = root[lv]
         else:
             lv = host[-1]
-            if '*' in root:
-                iplist.append(root['*'])
             if lv in root:
-                iplist.append(root[lv].get(0, ()))
-        ips = uniq(chain.from_iterable(reversed(iplist)))
-        return ips
+                iplist.extend(root[lv].get(0, ()))
+            if '*' in root:
+                iplist.extend(root['*'])
+        return uniq(iplist)
 
 
 def init(id, cfg):
     global SR
-    log_info("pythonmod: init called, module id is %d port: %d script: %s" % (id, cfg.port, cfg.python_script))
-    SR = StaticResolver(HOSTS, HOSTSFORMAT)
+    log_info("pythonmod[staticdns]: init called, module id is %d port: %d script: %s" % (id, cfg.port, cfg.python_script))
+    SR = StaticResolver(HOSTS)
     return True
 
 
