@@ -17,7 +17,7 @@ Test available Google IPs.
       -w WORKERS, --workers WORKERS
                             并发多少线程 (默认 100)
       -t, --time            输出连接时间
-      -o, --hosts           输出 hosts 格式
+      -o, --hosts           输出 hosts 格式 (无通配符)
 
 稍等片刻，于标准输出可获得带域名的 IP 列表。
 
@@ -50,9 +50,4 @@ Unbound 需带有 Python 模块支持： --with-pythonmodule
 
 #### staticdns.py
 
-修改文件中 HOSTS 变量为测试工具输出文件所在的路径。若使用 Hosts 文件格式，需将 HOSTSFORMAT
-变量改成 True。
-
-### 注意
-
-此方法由于使用 * 通配符，可能会遇到 404 等错误，为避免此种情况可使用 Hosts 格式。
+修改文件中 HOSTS 变量为测试工具输出文件所在的路径。
