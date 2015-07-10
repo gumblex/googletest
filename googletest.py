@@ -179,39 +179,28 @@ def batchcheck(gm, count=10000, workers=100):
 
 def checkhosts(hostsfile):
     dnsmatchlist = lambda dnl, hostname: hostname in dnl or any(ssl._dnsname_match(dn, hostname) for dn in dnl)
-    hlines = hostsfile.splitlines(True)
-    preserve = [1] * len(hlines)
     ipname = {}
-    progress = ETA(len(hlines))
-    for k,ln in enumerate(hlines):
+    for k,ln in enumerate(hostsfile):
         try:
-            line = ln.split(b'#')[0].strip().split()
+            line = ln.split(b'#')[0].split()
             if line:
                 ip = line[0].strip().decode('ascii')
                 host = line[1].strip().decode('utf-8')
             else:
-                progress.print_status()
+                yield ln
                 continue
         except Exception as ex:
             # invalid line
-            preserve[k] = 0
-            progress.print_status()
             continue
         if ip in ipname:
             res = ipname[ip]
         else:
-            res = ipname[ip] = checkcert(ip, timeout=30, issuer=None)
+            res = ipname[ip] = checkcert(ip, timeout=10, issuer=None)
         if res is None:
             # no SSL available
-            pass
-        elif res:
-            preserve[k] = dnsmatchlist(res, host)
-        else:
-            # connection or other errors
-            preserve[k] = 0
-        progress.print_status()
-    progress.done()
-    return b''.join(itertools.compress(hlines, preserve))
+            yield ln
+        elif res and dnsmatchlist(res, host):
+            yield ln
 
 
 def loadiplist(filename):
@@ -246,7 +235,8 @@ def main():
 
     if args.check_hosts:
         # preserve any weird encodings
-        sys.stdout.buffer.write(checkhosts(open(args.file, 'rb').read()))
+        for ln in checkhosts(open(args.file, 'rb')):
+            sys.stdout.buffer.write(ln)
         sys.exit(0)
 
     GM = GoogleIPManager(loadiplist(args.file))
