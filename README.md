@@ -18,6 +18,8 @@ Test available Google IPs.
                             并发多少线程 (默认 100)
       -t, --time            输出连接时间
       -o, --hosts           输出 hosts 格式 (无通配符)
+      -c, --check-hosts     按 SSL 证书和连接情况检查 hosts 文件
+                            无视所有其他选项
 
 稍等片刻，于标准输出可获得带域名的 IP 列表。
 

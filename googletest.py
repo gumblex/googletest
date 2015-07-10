@@ -91,6 +91,8 @@ def checkcert(host, port=443, timeout=TMOUT, issuer=GOOGLE_ISSUER):
             sock.settimeout(timeout)
             with sslctx.wrap_socket(sock) as sslsock:
                 cert = sslsock.getpeercert()
+    except ConnectionRefusedError as ex:
+        return None
     except Exception as ex:
         return False
     if issuer and cert['issuer'] != issuer:
@@ -175,6 +177,43 @@ def batchcheck(gm, count=10000, workers=100):
     return gm.outputip()
 
 
+def checkhosts(hostsfile):
+    dnsmatchlist = lambda dnl, hostname: hostname in dnl or any(ssl._dnsname_match(dn, hostname) for dn in dnl)
+    hlines = hostsfile.splitlines(True)
+    preserve = [1] * len(hlines)
+    ipname = {}
+    progress = ETA(len(hlines))
+    for k,ln in enumerate(hlines):
+        try:
+            line = ln.split(b'#')[0].strip().split()
+            if line:
+                ip = line[0].strip().decode('ascii')
+                host = line[1].strip().decode('utf-8')
+            else:
+                progress.print_status()
+                continue
+        except Exception as ex:
+            # invalid line
+            preserve[k] = 0
+            progress.print_status()
+            continue
+        if ip in ipname:
+            res = ipname[ip]
+        else:
+            res = ipname[ip] = checkcert(ip, timeout=30, issuer=None)
+        if res is None:
+            # no SSL available
+            pass
+        elif res:
+            preserve[k] = dnsmatchlist(res, host)
+        else:
+            # connection or other errors
+            preserve[k] = 0
+        progress.print_status()
+    progress.done()
+    return b''.join(itertools.compress(hlines, preserve))
+
+
 def loadiplist(filename):
     seen = set()
     with open(filename, 'rb') as f:
@@ -199,9 +238,16 @@ def main():
                         help="show connection time")
     parser.add_argument("-o", "--hosts", action='store_true',
                         help="output hosts format")
+    parser.add_argument("-c", "--check-hosts", action='store_true',
+                        help="check hosts file by SSL cert and connectivity; ignores all other options")
     parser.add_argument("file", nargs='?', default='googleip.txt',
                         help="Google IP list file")
     args = parser.parse_args()
+
+    if args.check_hosts:
+        # preserve any weird encodings
+        sys.stdout.buffer.write(checkhosts(open(args.file, 'rb').read()))
+        sys.exit(0)
 
     GM = GoogleIPManager(loadiplist(args.file))
     if args.hosts:
@@ -211,8 +257,7 @@ def main():
         print('# Updated at ' + time.asctime())
     for i, h, t in batchcheck(GM, args.num, args.workers):
         if args.hosts:
-            if not h.startswith('*.'):
-                print('%s\t%s' % (i, h))
+            print('%s\t%s' % (i, h))
         elif args.time:
             print(i, h, t)
         else:
